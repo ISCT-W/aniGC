@@ -1,0 +1,47 @@
+# Public source allowlist. Local data and new root folders stay private by default.
+/*
+!/.gitignore
+!/.env.example
+!/README.md
+!/AGENTS.example.md
+!/src/
+!/tests/
+!/docs/
+!/.agents/
+!/review_knowledge/
+
+# Only generic documentation is published.
+/docs/*
+!/docs/architecture.md
+!/docs/local-tools.md
+!/docs/generation-backends.md
+
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/image-workflow/
+
+# Keep customer-specific instructions, credentials, records and feedback local.
+/AGENTS.md
+/.private/
+.env
+.env.*
+!.env.example
+/review_knowledge/*
+!/review_knowledge/index.md
+generations/
+state.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Development caches and machine-specific settings.
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.DS_Store
+*.log
