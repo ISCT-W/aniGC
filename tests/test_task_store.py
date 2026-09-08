@@ -101,6 +101,29 @@ class TaskStoreTests(unittest.TestCase):
             self.store.reserve(fifth, evidence_ready=True)
         self.assertEqual(self.store.recover()["remaining"], 0)
 
+    def test_default_task_allows_six_requests_and_rejects_seventh(self) -> None:
+        store = TaskStore.create(self.root / "default-limit", "仅离线模拟默认次数。", "默认次数测试")
+        self.assertEqual(store.snapshot()["batches"][0]["limit"], 6)
+        for remaining in range(5, -1, -1):
+            round_id = store.prepare("离线输入", "离线依据", "fixture", "fixture")
+            store.reserve(round_id, evidence_ready=True)
+            store.finish(round_id, status="failed", note="离线模拟已发送失败，不调用任何服务。")
+            self.assertEqual(store.recover()["remaining"], remaining)
+        seventh = store.prepare("第七次离线输入", "离线依据", "fixture", "fixture")
+        with self.assertRaises(StoreError):
+            store.reserve(seventh, evidence_ready=True)
+
+    def test_saved_four_request_batch_is_not_expanded_on_recovery(self) -> None:
+        self.sent_failure()
+        state_path = self.task_dir / "state.json"
+        before = state_path.read_bytes()
+        resumed = TaskStore(self.task_dir)
+        resumed.recover()
+        resumed.preview()
+        self.assertEqual(state_path.read_bytes(), before)
+        self.assertEqual(resumed.snapshot()["batches"][0]["limit"], 4)
+        self.assertEqual(resumed.recover()["remaining"], 3)
+
     def test_reopening_task_does_not_reset_budget(self) -> None:
         for _ in range(4):
             self.sent_failure()
@@ -281,12 +304,13 @@ class TaskStoreTests(unittest.TestCase):
         with self.assertRaises(StoreError):
             self.store.new_batch(authorization="")
         self.store.new_batch(authorization="用户明确授权新的离线测试批次。")
-        self.assertEqual(self.store.recover()["remaining"], 4)
+        self.assertEqual(self.store.recover()["remaining"], 6)
+        self.assertEqual([batch["limit"] for batch in self.store.snapshot()["batches"]], [4, 6])
         new_round = self.sent_failure()
         self.assertNotIn(new_round, previous_rounds)
         for round_id in previous_rounds:
             self.assertTrue((self.task_dir / "rounds" / round_id / "prompt.md").is_file())
-        self.assertEqual(self.store.recover()["remaining"], 3)
+        self.assertEqual(self.store.recover()["remaining"], 5)
 
     def test_unresolved_request_cannot_be_bypassed_with_new_batch(self) -> None:
         round_id = self.prepare()

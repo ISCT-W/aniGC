@@ -48,7 +48,7 @@ class GenerationTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.store = TaskStore.create(self.root / "task", "离线测试，无真实生图授权", "适配器离线测试")
+        self.store = TaskStore.create(self.root / "task", "离线测试，无真实生图授权", "适配器离线测试", limit=4)
         self.image = self.root / "reference.png"
         self.image.write_bytes(PNG)
 
@@ -211,6 +211,21 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(main(["check-request", str(self.store.path), "001"]), 0)
             self.assertEqual(main(["generate", str(self.store.path), "001"]), 2)
         self.assertEqual(self.store.recover()["remaining"], 4)
+
+    def test_cli_limits_default_to_six_and_preserve_explicit_values(self):
+        brief, authorization = self.root / "brief.md", self.root / "authorization.md"
+        brief.write_text("仅离线测试 CLI 次数设置。")
+        authorization.write_text("明确开启新的离线测试批次，不构成生图授权。")
+        with redirect_stdout(io.StringIO()), patch("anigc.cli.generate_round", side_effect=AssertionError("no model calls")):
+            for initial_limit, option in ((6, []), (4, ["--limit", "4"])):
+                with self.subTest(initial_limit=initial_limit):
+                    path = self.root / f"cli-limit-{initial_limit}"
+                    self.assertEqual(main(["init", str(path), "--title", "离线测试", "--brief-file", str(brief), *option]), 0)
+                    task = TaskStore(path)
+                    self.assertEqual(task.snapshot()["batches"][0]["limit"], initial_limit)
+                    self.assertEqual(main(["new-batch", str(path), "--authorization-file", str(authorization)]), 0)
+                    self.assertEqual(main(["new-batch", str(path), "--authorization-file", str(authorization), "--limit", "4"]), 0)
+                    self.assertEqual([batch["limit"] for batch in task.snapshot()["batches"]], [initial_limit, 6, 4])
 
 
 class ConfigTests(unittest.TestCase):

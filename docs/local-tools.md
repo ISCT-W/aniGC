@@ -42,6 +42,18 @@ PYTHONPATH=src python3 -m anigc status generations/20260907T150000+0900-example 
 
 验收结论可用 `accepted` 或 `changes_requested`；`comment.md` 必须是用户对应版本的原话。未回复无需运行 `accept`。`preview` 与 `recover` 都更新任务 README；直接在 Codex 打开它即可浏览实际图片和报告。不存在上传或启动网页服务的步骤。
 
+## 本地裁边等处理后的派生图
+
+已经在本地完成裁边、修字等处理时，用 `derive` 登记派生图片。它只复制已有图片并记录来源，不执行转换、不发送请求、不增加生成次数。先在 Markdown 说明中写明处理工具、具体参数、原始和派生尺寸及检查范围，再运行：
+
+```sh
+PYTHONPATH=src python3 -m anigc derive generations/20260907T150000+0900-example 002 output-01.png --image cropped.png --note-file crop-note.md
+PYTHONPATH=src python3 -m anigc review generations/20260907T150000+0900-example 002 derived-001.png --report-file cropped-review.md --verdict pass
+PYTHONPATH=src python3 -m anigc promote generations/20260907T150000+0900-example 002 derived-001.png
+```
+
+`derive` 要求该轮成功取回且来源图片校验通过，保存 `derived-001.png`、`derived-001.md` 等独立版本；原始 `output-*`、API 响应收据和原监修均保留。派生图必须实际看图并单独登记监修，不能继承原图的通过结论。来源图片或冻结的处理说明变动后，交付、验收及恢复检查会报告失效；不完整 API 响应也不能通过派生图绕过交付限制。相同来源、相同图片和相同说明的重复登记会复用原记录；中断后用完全相同的输入恢复，已有不同内容的文件不会被覆盖。
+
 ## 次数与中断的准确含义
 
 | 状态 | 本批占一次额度 | 下一步 |
@@ -53,7 +65,7 @@ PYTHONPATH=src python3 -m anigc status generations/20260907T150000+0900-example 
 | failed | 是 | 已发送失败，若再发必须新增轮次并再计一次 |
 | not_sent | 否 | 仅 reserved 可转入；须有明确发送前本地失败依据 |
 
-默认最多 4 次，含首次生成。每轮对应一次请求；同样输入的重试也创建新轮次，保留全部失败记录。看图、检索、准备和查询原任务状态不占额度。后端改变不影响计数。一次只允许一个未决请求，防止并发重复提交；文件锁和原子状态写入不承诺远端请求只执行一次。
+新任务和新批次默认最多 6 次，含首次生成；`init --limit`、`new-batch --limit` 的显式设置优先。已有任务、已有批次继续使用状态中保存的上限（例如 4 次），恢复或升级代码不会自动扩容或重置计数。每轮对应一次请求；同样输入的重试也创建新轮次，保留全部失败记录。看图、检索、准备和查询原任务状态不占额度。后端改变不影响计数。一次只允许一个未决请求，防止并发重复提交；文件锁和原子状态写入不承诺远端请求只执行一次。
 
 如果提交后超时，使用 `unknown`；后来确认取回成功或远端失败，可对原轮次再 `finish succeeded/failed`，不产生第二次调用计数。若服务端没有查询能力，保留阻塞，不能编造已失败来发新请求。`not_sent` 是调用者提供的事实，工具不能独立证明请求是否真的发送。
 

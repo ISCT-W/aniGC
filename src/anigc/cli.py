@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import sys
 
-from .task_store import StoreError, TaskStore, raster
+from .task_store import DEFAULT_REQUEST_LIMIT, StoreError, TaskStore, raster
 from .backends import BACKENDS, make_backend, resolve_model
 from .backends.types import BackendError, ImageInput, ImageRequest
 from .generation import MIME_BY_SUFFIX, check_request, generate_round
@@ -27,7 +27,7 @@ def parser():
     init.add_argument("--brief-file", required=True)
     init.add_argument("--mode", choices=["offline", "generation"], default="offline")
     init.add_argument("--authorization-file")
-    init.add_argument("--limit", type=int, default=4)
+    init.add_argument("--limit", type=int, default=DEFAULT_REQUEST_LIMIT, help="本批请求上限，默认 6；不会修改已有任务")
     prep = sub.add_parser("prepare", help="保存完整输入和本轮参考快照；不占次数")
     prep.add_argument("task")
     prep.add_argument("--prompt-file", required=True)
@@ -52,6 +52,12 @@ def parser():
     finish.add_argument("--output", action="append", default=[])
     finish.add_argument("--note-file", required=True)
     finish.add_argument("--locator", default="")
+    derive = sub.add_parser("derive", help="登记已在本地处理的派生图及来源；不执行转换、不增加调用次数")
+    derive.add_argument("task")
+    derive.add_argument("round")
+    derive.add_argument("candidate", help="来源候选文件名，如 output-01.png")
+    derive.add_argument("--image", required=True, help="已经保存的派生图片")
+    derive.add_argument("--note-file", required=True, help="说明工具、转换参数、尺寸及保留内容的 Markdown")
     review = sub.add_parser("review", help="登记实际看图结论；程序不判断视觉质量")
     review.add_argument("task")
     review.add_argument("round")
@@ -72,7 +78,7 @@ def parser():
     batch = sub.add_parser("new-batch", help="有明确继续生成指令时新增批次；保留历史次数")
     batch.add_argument("task")
     batch.add_argument("--authorization-file", required=True)
-    batch.add_argument("--limit", type=int, default=4)
+    batch.add_argument("--limit", type=int, default=DEFAULT_REQUEST_LIMIT, help="新批次请求上限，默认 6；历史批次保持原值")
     status = sub.add_parser("status", help="记录暂停、阻塞、取消等执行状态")
     status.add_argument("task")
     status.add_argument("value", choices=["active", "paused", "blocked", "cancelled", "complete"])
@@ -144,6 +150,9 @@ def main(argv=None):
                 print("已保守占用一次额度。实际请求仍须由 Agent 调用工具；结果不明时不能重发。")
             elif args.command == "finish":
                 task.finish(args.round, args.status, args.output, read_md(args.note_file), args.locator)
+            elif args.command == "derive":
+                candidate = task.derive(args.round, args.candidate, args.image, read_md(args.note_file))
+                print(f"本地派生候选已登记：{candidate}；需要独立监修，未增加生成次数。")
             elif args.command == "review":
                 task.review(args.round, args.candidate, read_md(args.report_file), args.verdict, args.blocker, args.unknown)
             elif args.command == "promote":

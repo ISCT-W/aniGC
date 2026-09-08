@@ -16,6 +16,7 @@ import uuid
 
 
 TEMPLATES = Path(__file__).resolve().parents[2] / ".agents/skills/image-workflow/assets/templates"
+DEFAULT_REQUEST_LIMIT = 6
 UNRESOLVED = {"reserved", "unknown"}
 UNCHARGED = {"prepared", "not_sent"}
 
@@ -167,12 +168,21 @@ class TaskStore:
         return {"path": relative, "sha256": digest(data)}
 
     def _check(self, record):
-        path = self._path(record["path"])
-        if not path.is_file() or digest(path.read_bytes()) != record["sha256"]:
-            raise StoreError(f"文件缺失或内容已改变：{record['path']}")
+        for item in self._provenance(record):
+            path = self._path(item["path"])
+            if not path.is_file() or digest(path.read_bytes()) != item["sha256"]:
+                raise StoreError(f"文件缺失或内容已改变：{item['path']}")
+
+    @staticmethod
+    def _provenance(record):
+        """A local derivative remains bound to its source and transformation."""
+        yield record
+        for key in ("derived_from", "transformation"):
+            if key in record:
+                yield from TaskStore._provenance(record[key])
 
     @classmethod
-    def create(cls, path, brief, title, mode="offline", authorization="", limit=4, project_id=None):
+    def create(cls, path, brief, title, mode="offline", authorization="", limit=DEFAULT_REQUEST_LIMIT, project_id=None):
         require_text(brief, "用户原始请求")
         require_text(title, "任务名")
         positive_limit(limit)
@@ -429,6 +439,49 @@ class TaskStore:
                 return output
         raise StoreError("找不到已保存的候选图片")
 
+    def derive(self, round_id, candidate, image, note):
+        """Register an already-created local derivative, without a model call.
+
+        Original API files and their receipt stay intact. The new candidate has
+        its own review history and immutable source/transformation provenance.
+        """
+        require_text(note, "本地转换说明")
+        data, suffix = raster(image)
+        with self._locked():
+            state = self._read()
+            attempt = self._attempt(state, round_id)
+            if attempt["status"] != "succeeded":
+                raise StoreError("只有已成功取回图片的轮次能登记本地派生候选")
+            self._check_inputs(state, attempt)
+            source = self._output(attempt, candidate)
+            self._check(source)
+            explanation = (
+                "# 本地派生处理\n\n"
+                f"来源：[{candidate}]({candidate})\n\n"
+                f"来源 SHA-256：`{source['sha256']}`\n\n"
+                "这里只登记本地处理后的图片，不执行转换、不调用模型、不增加生成次数。\n\n"
+                f"## 处理说明\n\n{note}\n"
+            ).encode()
+            existing = [output for output in attempt["outputs"] if "derived_from" in output]
+            for output in existing:
+                if (output["derived_from"] == source and output["sha256"] == digest(data)
+                        and output["transformation"]["sha256"] == digest(explanation)):
+                    self._check(output)
+                    return Path(output["path"]).name
+            name = f"derived-{len(existing) + 1:03d}"
+            folder = f"rounds/{round_id}"
+            transformation = self._file(f"{folder}/{name}.md", explanation, adopt=True)
+            output = self._file(f"{folder}/{name}{suffix}", data, adopt=True)
+            output["derived_from"] = source.copy()
+            output["transformation"] = transformation
+            attempt["outputs"].append(output)
+            attempt["events"].append({
+                "at": now(), "status": "derived",
+                "note": f"登记本地派生候选 {name}{suffix}，来源 {candidate}；需要独立监修，未调用生成后端。",
+            })
+            self._save(state)
+            return f"{name}{suffix}"
+
     def review(self, round_id, candidate, report, verdict, blockers=(), unknowns=()):
         require_text(report, "实际看图的监修报告")
         if verdict not in {"pass", "fail", "unverified"}:
@@ -519,7 +572,7 @@ class TaskStore:
             item["acceptance"] = status
             self._save(state)
 
-    def new_batch(self, authorization, limit=4):
+    def new_batch(self, authorization, limit=DEFAULT_REQUEST_LIMIT):
         require_text(authorization, "继续生成的新授权原话")
         positive_limit(limit)
         with self._locked():
@@ -567,7 +620,7 @@ class TaskStore:
                 self._check(record)
             except StoreError as exc:
                 warnings.append(str(exc))
-        known = {r["path"] for r in records}
+        known = {item["path"] for record in records for item in self._provenance(record)}
         # Orphan files indicate an interrupted multi-file operation, never success.
         for folder in ("rounds", "final_output"):
             root = self._path(folder)
@@ -636,6 +689,9 @@ class TaskStore:
                     label = f"[{label}]({r['report']['path']})"
                 except StoreError:
                     label = "尚未监修"
+                if output.get("derived_from"):
+                    label += (f"<br>本地派生 · [来源]({output['derived_from']['path']})"
+                              f" · [处理说明]({output['transformation']['path']})")
                 views.append(f"![{name}]({output['path']})<br>{label}")
             lines.append(f"| {a['id']} / {a['batch']} | [{a['status']}](rounds/{a['id']}/execution.md) | {'<br>'.join(views) or '尚无图片'} | [完整 prompt 与修改要求]({a['prompt']['path']}) · [参考快照]({a['reference']['path']}) |")
             execution = [f"# 第 {a['id']} 轮执行记录", "", f"后端：{a['backend']}；模型：{a['model']}；状态：{a['status']}。", "",
@@ -649,6 +705,15 @@ class TaskStore:
                     execution += ["响应含未能取得的产物，本轮不满足完整交付条件。", ""]
             for record in a["inputs"]:
                 execution.append(f"- {record['role']}：`{record['path']}`；SHA-256 `{record['sha256']}`")
+            derived = [output for output in a["outputs"] if output.get("derived_from")]
+            if derived:
+                execution += ["", "## 本地派生候选（不增加生成次数）", ""]
+                for output in derived:
+                    execution.append(
+                        f"- [{Path(output['path']).name}]({Path(output['path']).name})"
+                        f"；来源 [{Path(output['derived_from']['path']).name}]({Path(output['derived_from']['path']).name})"
+                        f"；[处理说明]({Path(output['transformation']['path']).name})；须独立监修。"
+                    )
             for event in a["events"]:
                 execution += ["", f"### {event['at']} — {event['status']}", "", event["note"]]
                 if event.get("locator"):
