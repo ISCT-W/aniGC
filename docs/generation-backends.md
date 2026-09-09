@@ -9,7 +9,7 @@
 | 后端标识 | 制作方式 | 当前状态 | 后续接入边界 |
 | --- | --- | --- | --- |
 | `gemini` | Google 图片生成／语义编辑 API | 已实现 | 通过同一个生成执行器计数和保存 |
-| `codex-image` | Codex 会话内置 image_gen | 本地流程已接入，真实出图未验证 | 不读取 API key；reserve 后由 Agent 调用工具，再 finish 登记 |
+| `codex-image` | Codex 会话内置 image_gen | 已接入；已真实返回图片并完成监修、1080p派生与交付 | 不读取 API key；reserve 后由 Agent 调用工具，再 finish 登记 |
 | `gpt` | OpenAI Images API | 已实现；gpt-image-2 已真实返回生成与编辑图，质量逐任务监修 | 共用生成执行器、冻结与计数 |
 | `gpt-image-2` | 旧预留名称 | 禁止执行，提示使用 gpt | 后端与型号分开，不将旧名称静默映射到配置型号 |
 | `clip-studio` | Codex 操作电脑绘画 | 仅声明入口，未实现 | 独立桌面执行流程，保存 `.clip` 工程和每轮导出图；普通画笔操作不算生图请求 |
@@ -141,4 +141,4 @@ PYTHONPATH=src python3 -m anigc generate generations/<任务目录> 001 --execut
 6. 结果完整时使用 finish --status succeeded，随后进行视觉监修。若工具明确返回不完整产物，保留可读候选并保持未决，不得使用普通 succeeded 声称完整；需要恢复清点。收录中断先 recover，再依据原始工具结果使用同一组文件 finish，不再调用工具。仅在 API stage_result 已有完整收据时使用 collect。
 7. review、promote、accept 与其他路线相同。工具返回图片不代表 Agent 监修通过。
 
-本地验证只证明文件、用途、冻结与计数契约；不能确认会话工具存在、替 Agent 调用工具或证明 Agent 使用了相同输入。真实生成仍由会话中的 Codex 按上述步骤负责，本次接入仅做离线测试。
+本地验证只证明文件、用途、冻结与计数契约；不能确认会话工具存在、替 Agent 调用工具或证明 Agent 使用了相同输入。真实生成仍由会话中的 Codex 按上述步骤负责。2026-09-09 在 `generations/20260909T135207+0900-nezuko-shinobu-figure-ad-codex-image/` 实际调用一次，返回1672×941图片；完成原图监修、1920×1080派生版独立监修与交付，用户验收待定。该记录证明本次链路可用，不保证其他任务质量或原生1080p输出。
