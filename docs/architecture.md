@@ -1,6 +1,6 @@
 # aniGC 架构与资料利用方案
 
-当前实现包含工作流 skill、七类模板、本地任务状态、请求预算、版本校验，以及可替换的 API 契约、Gemini / GPT 适配器与 Codex 内置工具的会话衔接。自动反馈检索和 Clip Studio 尚未实现；生成质量需逐任务验证。
+当前实现包含工作流 skill、七类模板、本地任务状态、请求预算、版本校验，以及可替换的 API 契约和 Gemini / GPT 适配器。自动反馈检索和 Clip Studio 尚未实现；生成质量需逐任务验证。
 
 ## 1. 职责与边界
 
@@ -74,9 +74,8 @@
 | `backends/__init__.py` | 显式后端选择；未实现路线拒绝执行 |
 | `backends/gemini.py` / `gpt.py` | 各 API 参数校验、请求构造和响应解析 |
 | `backends/common.py` | 单次 HTTP 传输、禁止重定向与图片文件头检查 |
-| `backends/codex_image.py` | 会话工具输入校验；不发送 HTTP 请求 |
 
-Gemini API 已实现，使用单次请求，不隐藏重试或切换后端。GPT Images API 已通过同一执行器接入；codex-image 已接入本地准备、校验、手工预留和结果登记，由 Codex 会话调用 image_gen；Python 不代发。Clip Studio 为预留路线。桌面绘画未来需保留可编辑工程与导出图，不将普通画笔操作当作生图 API 请求。
+Gemini API 已实现，使用单次请求，不隐藏重试或切换后端。GPT Images API 已通过同一执行器接入。Clip Studio 为预留路线。桌面绘画未来需保留可编辑工程与导出图，不将普通画笔操作当作生图 API 请求。
 
 API 由 `generate --execute --evidence-ready` 内部预留次数，不重复手工 reserve。收到结果时先保存预期文件、校验值与完整性，再写产物；文件已完整暂存时可以 collect，不重新调用生成器。未知远端结果未必能够自动取回。
 

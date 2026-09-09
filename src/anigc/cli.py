@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 
 from .task_store import DEFAULT_REQUEST_LIMIT, StoreError, TaskStore, raster
-from .backends import BACKENDS, make_backend, resolve_model
+from .backends import BACKENDS, backend_spec, make_backend, resolve_model
 from .backends.types import BackendError, ImageInput, ImageRequest
 from .generation import MIME_BY_SUFFIX, check_request, generate_round
 from .config import DOTENV
@@ -34,7 +34,7 @@ def parser():
     prep.add_argument("--reference-file", required=True)
     prep.add_argument("--backend", required=True)
     prep.add_argument("--model")
-    prep.add_argument("--api-text-file", "--submission-file", dest="api_text_file", help="精确实际提交文字；与包含说明的 prompt 记录分开")
+    prep.add_argument("--api-text-file", help="精确实际提交文字；与包含说明的 prompt 记录分开")
     prep.add_argument("--operation", choices=["generate", "edit"], default="generate")
     prep.add_argument("--aspect-ratio")
     prep.add_argument("--image-size")
@@ -120,8 +120,7 @@ def main(argv=None):
             if args.command == "prepare":
                 model = args.model
                 extra = {}
-                if args.backend == "codex-image" and not args.api_text_file:
-                    raise StoreError("codex-image 需要 --submission-file 冻结完整工具输入")
+                backend_spec(args.backend)
                 if args.api_text_file:
                     model = resolve_model(args.backend, model, env_file=args.env_file)
                     submission = read_md(args.api_text_file)
@@ -150,10 +149,6 @@ def main(argv=None):
                 task.collect(args.round)
                 print("已完成本地收录；没有新发生成请求。")
             elif args.command == "reserve":
-                snapshot = task.snapshot()
-                attempt = next((a for a in snapshot["attempts"] if a["id"] == args.round), None)
-                if attempt and attempt["backend"] == "codex-image":
-                    check_request(task, args.round)
                 task.reserve(args.round, args.evidence_ready)
                 print("已保守占用一次额度。实际请求仍须由 Agent 调用工具；结果不明时不能重发。")
             elif args.command == "finish":

@@ -189,6 +189,25 @@ class GenerationTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(StoreError):
                 make_backend(name)
 
+    def test_removed_route_cannot_prepare_or_send_but_history_recovers(self):
+        # Old records remain readable, but the removed route cannot execute.
+        r = self.prepare("codex-image", "codex-managed")
+        before = self.store.recover()["remaining"]
+        with self.assertRaises(StoreError):
+            check_request(self.store, r)
+        with self.assertRaises(StoreError):
+            generate_round(self.store, r, execute=True, evidence_ready=True)
+        self.assertEqual(self.store.recover()["remaining"], before)
+        record = self.root / "record.md"
+        record.write_text("offline fixture")
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            for extra in ([], ["--api-text-file", str(record)]):
+                code = main(["prepare", str(self.store.path), "--backend", "codex-image",
+                             "--model", "codex-managed", "--prompt-file", str(record),
+                             "--reference-file", str(record), *extra])
+                self.assertEqual(code, 2)
+        self.assertEqual(len(self.store.snapshot()["attempts"]), 1)
+
     def test_validation_has_no_key_loading_or_network(self):
         r = self.prepare("gemini", "gemini-2.5-flash-image")
         with patch("anigc.backends.gemini_key", side_effect=AssertionError("key must not load")), \

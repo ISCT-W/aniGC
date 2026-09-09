@@ -6,7 +6,7 @@
 
 ## 目录命名
 
-新生成任务目录使用 `generations/<时间戳>-<简短任务名>-<工具>/`，例如 `-gemini`、`-gpt`、`-codex-image`、`-clip-studio`。后缀标识实际制作入口，准确型号另记任务页和每轮设置；多工具任务用 `-mixed` 并逐轮记录。既有任务不为命名规则追改目录或重置额度；用户明确要求换工具重新跑的对比任务可另建目录，链接原任务并保存本次授权。 本约定由执行者选择路径落实；`init` 不自动追加后缀，也不据目录名推断后端。
+新生成任务目录使用 `generations/<时间戳>-<简短任务名>-<工具>/`，例如 `-gemini`、`-gpt`、`-clip-studio`。后缀标识实际制作入口，准确型号另记任务页和每轮设置；多工具任务用 `-mixed` 并逐轮记录。既有任务不为命名规则追改目录或重置额度；用户明确要求换工具重新跑的对比任务可另建目录，链接原任务并保存本次授权。 本约定由执行者选择路径落实；`init` 不自动追加后缀，也不据目录名推断后端。
 
 ## 操作顺序
 
@@ -93,20 +93,3 @@ PYTHONPATH=src python3 -m anigc promote generations/20260907T150000+0900-example
 ## 验证
 
 在根目录运行 `PYTHONPATH=src python3 -m unittest discover -s tests -v`。固定小 PNG 和所有测试任务均位于临时目录，完全离线。测试验证流程约束，不证明生成模型质量、真实角色设定符合程度或 参考资料 MCP 新接口可用。
-
-## codex-image 会话工具衔接
-
-以下为已建任务的占位示例；仅在用户明确启动图片任务后执行真实工具调用。
-
-```sh
-PYTHONPATH=src python3 -m anigc prepare generations/<任务目录> \
-  --backend codex-image --prompt-file prompt-record.md \
-  --submission-file actual-text.md --reference-file reference-baseline.md
-PYTHONPATH=src python3 -m anigc check-request generations/<任务目录> 001
-PYTHONPATH=src python3 -m anigc reserve generations/<任务目录> 001 --evidence-ready
-# 此时由 Codex 会话调用一次 image_gen；没有对应的 shell 生图命令。
-PYTHONPATH=src python3 -m anigc finish generations/<任务目录> 001 \
-  --status succeeded --output <工具实际返回的原图路径> --note-file execution-note.md
-```
-
-多张产物重复 --output，全部保存。模型自动记录为 codex-managed，实际内部型号未知；不读取 GPT 环境变量。尺寸等要求写进 actual-text.md，不把 API 参数用于内置路线。失败/未知/中断处理及图片输入对应关系见 [后端说明](generation-backends.md#codex-内置工具路线codex-image)。后续 review/promote/accept 不变。

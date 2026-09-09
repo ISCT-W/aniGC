@@ -15,7 +15,6 @@ Codex 根据工作流 skill 判断资料和画面；Python 工具执行文件保
 | 逐图监修登记、最终版本校验、独立用户验收 | 已实现；视觉判断由 Codex 执行 |
 | 历史反馈规则 | 已有本地记录与人工索引流程；自动检索待实现 |
 | GPT Images API 生成、多参考图与语义编辑 | 已实现；支持型号与参数校验、独立凭据、多参考图和结果收录；账号可用性需自行核验 |
-| Codex 内置图片工具（codex-image） | 本地准备、校验、计数和登记已接入；会话工具由 Codex 调用；实际出图与质量须在使用环境验证 |
 | Clip Studio | 尚未接入 |
 | 真实生成质量与监修效果 | 已有首批复盘；质量改进仍待后续任务验证 |
 
@@ -64,7 +63,6 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 | `GPT_IMAGE_MODEL` | GPT API 型号；显式 `--model` 优先，未配置时不自动选择 |
 | `ANIGC_REFERENCE_PROJECT_ID` | 正式任务唯一允许的参考项目；未配置时拒绝创建正式任务 |
 
-`codex-image` 使用当前 Codex 会话的内置工具，无需 API key；`codex-managed` 只是路线标记，实际内部型号未知。尺寸与画质要求写进 prompt，不冒充已设置 API 参数。
 
 离线任务使用 `offline-fixture` 模拟项目，不读取真实项目配置。正式任务记录创建时的项目，恢复时核对当前配置，不会因更换配置而改写旧任务。
 
@@ -76,7 +74,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 2. 读取实际资料及适用历史反馈，分别核实身份、动作、特效与环境。Codex 将自然语言要求编排为单一故事瞬间、观看重点、逐人动作/视线/接触关系，并检查展示尺度与主要风险；无需用户先写专业分镜。
 3. 在参考基线中固定严格保持、允许变化和表达目标，逐张绑定参考的对象、版本、控制特征及禁止迁移内容。关键证据不足先补证；不能生成后因失败次数而降低用户要求。
 4. `prepare` 保存本轮输入，`check-request` 离线校验。API 使用 `submission.md` 中的精确文字，说明性记录保存在 `prompt.md`。
-5. Gemini / GPT API 使用 `generate --execute --evidence-ready` 预留次数并发送一次请求；Codex 内置路线使用 `reserve --evidence-ready` → 会话调用 `image_gen` → `finish` 收录全部原图。两条路线不混用，不隐藏重试。
+5. Gemini / GPT API 使用 `generate --execute --evidence-ready` 预留次数并发送一次请求；不隐藏重试。
 6. Codex 先描述实际画面，再核对对象归属、接触关系、动作方向及关键配件等高风险内容，完成适用的全图检查；正确性与表达效果分别结论，再用 `review` 登记。
 7. 需要修改时记录“问题 → 原因假设与依据 → 改什么 → 保留什么 → 修复判据”。资料问题先补证，导演问题重做方案，局部问题优先选择合适历史底图编辑；整体重生成须说明原因，禁止无诊断重复抽样。
 8. `promote` 将准确通过版本复制到 `final_output/`；`accept` 记录用户对该版本的明确意见。
@@ -107,7 +105,7 @@ generations/<时间戳>-<任务名>-<工具>/             # 本地数据，不�
   references/reference.md      # 来源、约束与资料缺口
   rounds/001/
     prompt.md                  # 本轮完整输入记录
-    submission.md              # 精确提交文字（API / 内置工具）
+    submission.md              # 精确提交文字（API）
     settings.md                # 模型、图片顺序与参数
     reference.md               # 当时的参考基线
     inputs/                    # 实际输入图片副本
