@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .types import ImageBackend
-from ..config import DOTENV, gemini_key, image_model
+from ..config import DOTENV, gemini_key, image_model, gpt_key, read_settings
 from ..task_store import StoreError
 
 
@@ -21,9 +21,21 @@ def _gemini(*, live=False, env_file=DOTENV, timeout=120.0):
     return GeminiBackend(api_key=gemini_key(env_file) if live else "", timeout=timeout)
 
 
+def _gpt(*, live=False, env_file=DOTENV, timeout=120.0):
+    from .gpt import GPTBackend
+    return GPTBackend(api_key=gpt_key(env_file) if live else "", timeout=timeout)
+
+
+def _codex_image(**kwargs):
+    from .codex_image import CodexImageBackend
+    return CodexImageBackend()
+
+
 BACKENDS = {
-    "gemini": BackendSpec("gemini", "api", "Nano Banana 系列；已实现 REST 适配器，真实调用待验证", _gemini),
-    "gpt-image-2": BackendSpec("gpt-image-2", "tool_or_api", "后续选内置工具或 OpenAI API 接入"),
+    "codex-image": BackendSpec("codex-image", "session_tool", "本地流程已接入；由 Codex 调用内置 image_gen，不需要 API key", _codex_image),
+    "gpt": BackendSpec("gpt", "api", "OpenAI Images API；生成、多参考图与语义编辑", _gpt),
+    "gemini": BackendSpec("gemini", "api", "Nano Banana 系列；已实现 REST 适配器，已有真实图片返回验证", _gemini),
+    "gpt-image-2": BackendSpec("gpt-image-2", "tool_or_api", "旧预留名称；请使用 --backend gpt，并单独指定 --model"),
     "clip-studio": BackendSpec("clip-studio", "desktop", "电脑绘画、可编辑 .clip 工程与每轮导出图"),
 }
 
@@ -36,6 +48,8 @@ def backend_spec(name):
 
 def make_backend(name, *, live=False, env_file=DOTENV, timeout=120.0):
     spec = backend_spec(name)
+    if spec.route == "session_tool" and live:
+        raise StoreError("codex-image 需要 Codex 会话工具：check-request → reserve → image_gen → finish；不能用 generate 代发 API")
     if spec.factory is None:
         raise StoreError(f"{name} 是预留的 {spec.route} 路线，尚未实现；不会切换到其他后端")
     return spec.factory(live=live, env_file=env_file, timeout=timeout)
@@ -43,8 +57,18 @@ def make_backend(name, *, live=False, env_file=DOTENV, timeout=120.0):
 
 def resolve_model(name, explicit=None, *, env_file=DOTENV):
     backend_spec(name)
+    if name == "codex-image":
+        from .codex_image import MODEL
+        if explicit is not None and explicit != MODEL:
+            raise StoreError("codex-image 不支持指定型号；不读取 GPT_IMAGE_MODEL")
+        return MODEL
     if explicit:
         return explicit
     if name == "gemini":
         return image_model(env_file=env_file)
+    if name == "gpt":
+        model = read_settings(["GPT_IMAGE_MODEL"], env_file).get("GPT_IMAGE_MODEL")
+        if model:
+            return model
+        raise StoreError("GPT 需要 --model 或 GPT_IMAGE_MODEL；不自动选择型号")
     raise StoreError("此后端需要显式模型或制作工具版本标识")

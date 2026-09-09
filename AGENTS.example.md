@@ -29,3 +29,9 @@
 ## 实现与验证
 
 保持后端可替换；尚未实现的后端不能静默回退。离线测试不证明真实生成效果、参考遵循或监修质量。报告实际完成的检查和剩余限制。
+
+## 生成任务目录命名
+
+新生成任务目录使用 `generations/<时间戳>-<简短任务名>-<工具>/`，例如 `-gemini`、`-gpt`、`-codex-image`、`-clip-studio`。后缀标识实际制作入口，准确型号另记任务页和每轮设置；多工具任务用 `-mixed` 并逐轮记录。既有任务不为命名规则追改目录或重置额度；用户明确要求换工具重新跑的对比任务可另建目录，链接原任务并保存本次授权。
+
+- `codex-image` 为内置 image_gen 会话路线：完整输入通过 --submission-file 冻结，check-request 后 reserve，由 Codex 调用工具，再 finish 保存全部产物。无需 API key，型号 codex-managed 表示内部型号未知；Python generate 不代发。只接入不构成真实生图授权。

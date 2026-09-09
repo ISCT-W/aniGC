@@ -14,7 +14,9 @@ Codex 根据工作流 skill 判断资料和画面；Python 工具执行文件保
 | Gemini / Nano Banana 生成及基于底图的语义编辑适配器 | 已实现，有离线测试与真实返回图片验证 |
 | 逐图监修登记、最终版本校验、独立用户验收 | 已实现；视觉判断由 Codex 执行 |
 | 历史反馈规则 | 已有本地记录与人工索引流程；自动检索待实现 |
-| GPT 图片工具/API 与 Clip Studio | 预留路线，尚未实现 |
+| GPT Images API 生成、多参考图与语义编辑 | 已实现；支持型号与参数校验、独立凭据、多参考图和结果收录；账号可用性需自行核验 |
+| Codex 内置图片工具（codex-image） | 本地准备、校验、计数和登记已接入；会话工具由 Codex 调用；实际出图与质量须在使用环境验证 |
+| Clip Studio | 尚未接入 |
 | 真实生成质量与监修效果 | 已有首批复盘；质量改进仍待后续任务验证 |
 
 ```mermaid
@@ -41,7 +43,7 @@ git clone https://github.com/ISCT-W/aniGC.git
 cd aniGC
 PYTHONPATH=src python3 -m anigc --help
 PYTHONPATH=src python3 -m anigc backends
-python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
 这些检查不需要 API key，不发送生成请求；测试数据写入临时目录。
@@ -54,7 +56,11 @@ python3 -m unittest discover -s tests -v
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini 凭据，也兼容 `GOOGLE_API_KEY`；仅真实调用需要 |
 | `GEMINI_IMAGE_MODEL` | 独立图像模型配置；显式 `--model` 优先，均未设置时使用代码默认型号 |
+| `GPT_API_KEY` | GPT Images API 凭据；不回退到其他服务的 key |
+| `GPT_IMAGE_MODEL` | GPT API 型号；显式 `--model` 优先，未配置时不自动选择 |
 | `ANIGC_REFERENCE_PROJECT_ID` | 正式任务唯一允许的参考项目；未配置时拒绝创建正式任务 |
+
+`codex-image` 使用当前 Codex 会话的内置工具，无需 API key；`codex-managed` 只是路线标记，实际内部型号未知。尺寸与画质要求写进 prompt，不冒充已设置 API 参数。
 
 离线任务使用 `offline-fixture` 模拟项目，不读取真实项目配置。正式任务记录创建时的项目，恢复时核对当前配置，不会因更换配置而改写旧任务。
 
@@ -65,7 +71,7 @@ python3 -m unittest discover -s tests -v
 1. 用户明确启动生成，Codex 保存原始请求和授权，确认角色版本、参考项目与交付要求。
 2. 读取实际资料及适用历史反馈，分别核实身份、动作、特效与环境；细化故事瞬间和分镜，关键证据不足时保存缺口。
 3. `prepare` 保存本轮输入，`check-request` 离线校验。API 使用 `submission.md` 中的精确文字，说明性记录保存在 `prompt.md`。
-4. `generate --execute --evidence-ready` 校验输入并预留次数，向指定后端发送一次请求、保存结果；没有隐藏重试。
+4. Gemini / GPT API 使用 `generate --execute --evidence-ready` 预留次数并发送一次请求；Codex 内置路线使用 `reserve --evidence-ready` → 会话调用 `image_gen` → `finish` 收录全部原图。两条路线不混用，不隐藏重试。
 5. Codex 先检查每张图的故事与整体动作，再核查设定和局部瑕疵；正确性及适用的表达质量均成立才通过，再用 `review` 登记结论。需要修改时创建新轮次，保留完整输入及旧问题编号。
 6. `promote` 将准确通过版本复制到 `final_output/`；`accept` 记录用户对该版本的明确意见。
 
@@ -74,7 +80,7 @@ python3 -m unittest discover -s tests -v
 ## 可追溯记录
 
 ```text
-generations/<task>/             # 本地数据，不提交
+generations/<时间戳>-<任务名>-<工具>/             # 本地数据，不提交
   README.md                    # 状态、次数与轮次预览
   brief.md                     # 用户原始要求
   authorization-001.md          # 本批授权
@@ -83,7 +89,7 @@ generations/<task>/             # 本地数据，不提交
   references/reference.md      # 来源、约束与资料缺口
   rounds/001/
     prompt.md                  # 本轮完整输入记录
-    submission.md              # API 精确提交文字
+    submission.md              # 精确提交文字（API / 内置工具）
     settings.md                # 模型、图片顺序与参数
     reference.md               # 当时的参考基线
     inputs/                    # 实际输入图片副本

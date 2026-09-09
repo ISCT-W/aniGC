@@ -253,12 +253,15 @@ class TaskStore:
                  f"输出尺寸档位：{request['image_size'] or '未指定'}", "",
                  f"实际文字：{request['text']['path']}；SHA-256：{request['text']['sha256']}", "",
                  "## 图片输入（按实际顺序）", ""]
+        if "pixel_size" in request or "quality" in request:
+            lines[8:8] = [f"像素尺寸：{request.get('pixel_size') or 'auto'}", f"质量：{request.get('quality') or 'auto'}", ""]
         for record in attempt["inputs"]:
             lines.append(f"- {record['role']}：{record['path']}；SHA-256：{record['sha256']}")
         return "\n".join(lines) + "\n"
 
     def prepare(self, prompt, reference, backend, model, inputs=(), parent=None,
-                submission=None, operation="generate", aspect_ratio=None, image_size=None):
+                submission=None, operation="generate", aspect_ratio=None, image_size=None,
+                pixel_size=None, quality=None):
         for value, label in [(prompt, "完整 prompt"), (reference, "参考基线"), (backend, "后端"), (model, "准确模型标识或离线标识")]:
             require_text(value, label)
         if submission is not None:
@@ -308,6 +311,8 @@ class TaskStore:
                     "text": self._file(f"{folder}/submission.md", submission.encode()),
                     "operation": operation, "aspect_ratio": aspect_ratio, "image_size": image_size,
                 }
+                if pixel_size is not None or quality is not None:
+                    attempt["request"].update(pixel_size=pixel_size, quality=quality)
                 attempt["request"]["settings"] = self._file(f"{folder}/settings.md", self._request_settings(attempt).encode())
             state["attempts"].append(attempt)
             self._save(state)
@@ -328,6 +333,7 @@ class TaskStore:
                 "mode": state["mode"], "backend": attempt["backend"], "model": attempt["model"],
                 "prompt": self._path(request["text"]["path"]).read_text(),
                 "operation": request["operation"], "aspect_ratio": request["aspect_ratio"], "image_size": request["image_size"],
+                "pixel_size": request.get("pixel_size"), "quality": request.get("quality"),
                 "inputs": [(r["role"], self._path(r["path"]).read_bytes(), Path(r["path"]).suffix) for r in attempt["inputs"]],
             }
 

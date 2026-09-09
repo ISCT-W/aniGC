@@ -19,6 +19,8 @@ class ImageRequest:
     aspect_ratio: str | None = None
     image_size: str | None = None
     operation: str = "generate"
+    pixel_size: str | None = None
+    quality: str | None = None
 
 
 @dataclass(frozen=True)

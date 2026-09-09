@@ -227,13 +227,13 @@ class GeminiTests(unittest.TestCase):
         http_error = HTTPError("https://generativelanguage.googleapis.com/", 302, "redirect", {"Location": "https://example.invalid"}, error_body)
         opener = mock.Mock()
         opener.open.side_effect = http_error
-        with mock.patch.object(gemini, "build_opener", return_value=opener) as build:
+        with mock.patch("anigc.backends.common.build_opener", return_value=opener) as build:
             backend = GeminiBackend(KEY)
             with self.assertRaises(BackendError) as caught:
                 backend.generate(self.request)
         self.assertEqual(caught.exception.status, "failed")
         handler = build.call_args.args[0]
-        self.assertIsInstance(handler, gemini._NoRedirect)
+        self.assertIsInstance(handler, __import__("anigc.backends.common", fromlist=["_NoRedirect"])._NoRedirect)
         self.assertIsNone(handler.redirect_request(None, None, 302, "redirect", {}, "https://example.invalid"))
         error_body.read.assert_not_called()
         opener.open.assert_called_once()

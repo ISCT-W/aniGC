@@ -18,8 +18,6 @@ import json
 import math
 import re
 from typing import Callable
-from urllib.error import HTTPError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from .types import BackendError, ImageInput, ImageOutput, ImageRequest, ImageResult
 
@@ -43,34 +41,7 @@ USAGE_FIELDS = frozenset({
 })
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Never forward the API-key header or input images to another endpoint.
-        return None
-
-
-def _http_transport(url: str, headers: dict[str, str], body: bytes, timeout: float) -> tuple[int, bytes]:
-    request = Request(url, data=body, headers=headers, method="POST")
-    opener = build_opener(_NoRedirect())
-    try:
-        with opener.open(request, timeout=timeout) as response:
-            return response.status, response.read()
-    except HTTPError as error:
-        # Error bodies may echo credentials or input text. Do not read them.
-        status = error.code
-        error.close()
-        return status, b""
-
-
-def _is_raster(data: bytes, mime_type: str) -> bool:
-    """Match file signatures only; decoding and visual review are separate."""
-    if not isinstance(data, bytes) or not data:
-        return False
-    return (
-        mime_type == "image/png" and data.startswith(b"\x89PNG\r\n\x1a\n")
-        or mime_type == "image/jpeg" and data.startswith(b"\xff\xd8\xff")
-        or mime_type == "image/webp" and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
-    )
+from .common import _http_transport, _is_raster
 
 
 def _encode(payload: dict) -> bytes:
@@ -106,6 +77,8 @@ class GeminiBackend:
             raise BackendError("Gemini 仅接入生成与图片加文字编辑，未接入遮罩编辑。", "not_sent")
         if not isinstance(request.inputs, tuple) or not all(isinstance(item, ImageInput) for item in request.inputs):
             raise BackendError("图片输入必须是按顺序保存的图片输入元组。", "not_sent")
+        if request.pixel_size is not None or request.quality is not None:
+            raise BackendError("Gemini 尚未接入 pixel_size/quality 参数。", "not_sent")
         max_inputs, ratios, sizes = MODEL_CAPABILITIES[request.model]
         if len(request.inputs) > max_inputs:
             message = "当前适配器对 Gemini 2.5 限制为最多 3 张输入图。" if max_inputs == 3 else "该模型最多接入 14 张输入图。"

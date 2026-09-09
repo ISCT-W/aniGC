@@ -75,3 +75,12 @@ def gemini_key(env_file=DOTENV):
     if any(ord(char) < 32 or ord(char) > 126 for char in key):
         raise StoreError("API key 包含无效的 HTTP 头字符；值未输出")
     return key
+
+
+def gpt_key(env_file=DOTENV):
+    key = read_settings(["GPT_API_KEY"], env_file).get("GPT_API_KEY", "")
+    if not key or not key.strip():
+        raise StoreError("缺少 GPT_API_KEY；请在本地配置")
+    if any(ord(c) < 33 or ord(c) > 126 for c in key):
+        raise StoreError("GPT API key 包含无效的 HTTP 头字符；值未输出")
+    return key

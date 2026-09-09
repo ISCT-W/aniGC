@@ -20,6 +20,7 @@ def read_request(store, round_id):
         model=saved["model"], prompt=saved["prompt"], operation=saved["operation"],
         inputs=tuple(ImageInput(role, data, MIME_BY_SUFFIX[suffix]) for role, data, suffix in saved["inputs"]),
         aspect_ratio=saved["aspect_ratio"], image_size=saved["image_size"],
+        pixel_size=saved["pixel_size"], quality=saved["quality"],
     )
     return saved, request
 

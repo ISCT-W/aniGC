@@ -34,10 +34,12 @@ def parser():
     prep.add_argument("--reference-file", required=True)
     prep.add_argument("--backend", required=True)
     prep.add_argument("--model")
-    prep.add_argument("--api-text-file", help="精确实际提交文字；与包含说明的 prompt 记录分开")
+    prep.add_argument("--api-text-file", "--submission-file", dest="api_text_file", help="精确实际提交文字；与包含说明的 prompt 记录分开")
     prep.add_argument("--operation", choices=["generate", "edit"], default="generate")
     prep.add_argument("--aspect-ratio")
     prep.add_argument("--image-size")
+    prep.add_argument("--pixel-size", help="GPT 像素尺寸，如 1024x1024；默认 auto")
+    prep.add_argument("--quality", help="GPT 质量，默认 auto")
     prep.add_argument("--env-file", default=str(DOTENV))
     prep.add_argument("--input", nargs=2, action="append", metavar=("ROLE", "PATH"), default=[])
     prep.add_argument("--parent", help="本任务中所选父图的相对路径")
@@ -118,6 +120,8 @@ def main(argv=None):
             if args.command == "prepare":
                 model = args.model
                 extra = {}
+                if args.backend == "codex-image" and not args.api_text_file:
+                    raise StoreError("codex-image 需要 --submission-file 冻结完整工具输入")
                 if args.api_text_file:
                     model = resolve_model(args.backend, model, env_file=args.env_file)
                     submission = read_md(args.api_text_file)
@@ -126,9 +130,9 @@ def main(argv=None):
                         data, suffix = raster(source)
                         images.append(ImageInput(role, data, MIME_BY_SUFFIX[suffix]))
                     selected = make_backend(args.backend, live=False, env_file=args.env_file)
-                    selected.validate(ImageRequest(model, submission, tuple(images), args.aspect_ratio, args.image_size, args.operation))
-                    extra = dict(submission=submission, operation=args.operation, aspect_ratio=args.aspect_ratio, image_size=args.image_size)
-                elif args.aspect_ratio or args.image_size or args.operation != "generate":
+                    selected.validate(ImageRequest(model, submission, tuple(images), args.aspect_ratio, args.image_size, args.operation, args.pixel_size, args.quality))
+                    extra = dict(submission=submission, operation=args.operation, aspect_ratio=args.aspect_ratio, image_size=args.image_size, pixel_size=args.pixel_size, quality=args.quality)
+                elif args.aspect_ratio or args.image_size or args.pixel_size or args.quality or args.operation != "generate":
                     raise StoreError("API 设置需要 --api-text-file，不能只写参数却没有实际提交文字")
                 if not model:
                     raise StoreError("普通手动轮次须提供 --model；API 轮次可读取独立图像模型配置")
@@ -146,6 +150,10 @@ def main(argv=None):
                 task.collect(args.round)
                 print("已完成本地收录；没有新发生成请求。")
             elif args.command == "reserve":
+                snapshot = task.snapshot()
+                attempt = next((a for a in snapshot["attempts"] if a["id"] == args.round), None)
+                if attempt and attempt["backend"] == "codex-image":
+                    check_request(task, args.round)
                 task.reserve(args.round, args.evidence_ready)
                 print("已保守占用一次额度。实际请求仍须由 Agent 调用工具；结果不明时不能重发。")
             elif args.command == "finish":

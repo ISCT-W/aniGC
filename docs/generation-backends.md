@@ -1,4 +1,4 @@
-# 图片制作后端与 Nano Banana 适配器
+# 图片制作后端：Gemini、GPT API 与 Codex 内置工具
 
 已实现 Gemini / Nano Banana 的 REST 适配器，并接入本地请求计数、输入冻结、产物收录与恢复。已完成离线测试，并在明确授权的真实任务中通过 gemini-3-pro-image 取得图片、保存响应和逐轮监修／修改。该任务证明当前凭据和图片返回链路可用，不代表其他任务的质量或费用已验证。只有用户明确启动生图后，才使用本文的实际执行命令。
 
@@ -9,7 +9,9 @@
 | 后端标识 | 制作方式 | 当前状态 | 后续接入边界 |
 | --- | --- | --- | --- |
 | `gemini` | Google 图片生成／语义编辑 API | 已实现 | 通过同一个生成执行器计数和保存 |
-| `gpt-image-2` | 以后选择内置图片工具或 OpenAI API | 仅声明入口，未实现 | API 可实现同一请求／结果契约；内置工具由 Codex 调用并接回轮次记录 |
+| `codex-image` | Codex 会话内置 image_gen | 本地流程已接入，真实出图未验证 | 不读取 API key；reserve 后由 Agent 调用工具，再 finish 登记 |
+| `gpt` | OpenAI Images API | 已实现；gpt-image-2 已真实返回生成与编辑图，质量逐任务监修 | 共用生成执行器、冻结与计数 |
+| `gpt-image-2` | 旧预留名称 | 禁止执行，提示使用 gpt | 后端与型号分开，不将旧名称静默映射到配置型号 |
 | `clip-studio` | Codex 操作电脑绘画 | 仅声明入口，未实现 | 独立桌面执行流程，保存 `.clip` 工程和每轮导出图；普通画笔操作不算生图请求 |
 
 运行 `PYTHONPATH=src python3 -m anigc backends` 可以查看状态。选择尚未实现的路线会明确返回错误，不会偷偷换成 Gemini。现在没有创建“返回成功”的假 GPT／Clip Studio 实现。
@@ -91,3 +93,52 @@ PYTHONPATH=src python3 -m anigc collect generations/<任务目录> 001
 `collect` 不读 key、不调用 API。状态成功但预览更新中断时，`recover` 重建展示。用户停止后保留文件与请求记录，不借更换模型、新目录或恢复进程清零预算。
 
 监修通过后的 `review`、`promote`、`accept` 与之前相同。制作后端返回了图片不等于 Agent 已通过，更不等于用户已验收。
+
+## GPT 接入与后端识别
+
+用户指定 GPT 时使用 `--backend gpt`；指定 Gemini / Nano Banana 时使用 `--backend gemini`。新任务未指定时由 Codex 沿用 Gemini 并记录默认选择；继续任务沿用已选后端。底层 CLI 始终要求显式 `--backend`，不根据提示词、密钥存在或型号字符串前缀猜测后端。用户仅提供准确型号时，Codex 按适配器已登记型号匹配服务商，再填写显式后端。
+
+GPT 型号优先级：`--model` → `GPT_IMAGE_MODEL`，都缺失时报错。只读取 `GPT_API_KEY`，进程环境优先于 `.env`；不读取或回退至 Gemini/OpenAI 其他 key。`prepare` 和 `check-request` 不读取凭据、不联网。型号与后端在准备轮次时冻结；更换 `.env` 不改变旧轮次。更换后端需要新轮次，共享批次预算。
+
+`backends/gpt.py` 使用官方固定 `https://api.openai.com/v1/images/` 端点：纯文字使用 generations；包含参考图或编辑底图使用 multipart edits。应用层 `generate` 允许参考图，应用层 `edit` 必须恰好有一张 base。图片顺序原样提交，角色用途由完整提交文字说明。仅返回 PNG，默认 n=1；保存全部可读返回图，畸形或缺失图片使 complete=False，阻止交付。未返回模型版本、请求 ID 或费用时不编造。
+
+当前明确支持 `gpt-image-2`、`gpt-image-2.5-flare`、`gpt-image-2.5-sunburst`；这表示本地协议支持，不保证当前账号能调用。GPT 2.5 quality 支持 auto/low/medium/high/xhigh/max，GPT 2 支持 auto/low/medium/high。`--pixel-size WIDTHxHEIGHT` 或 auto，默认 auto；边长须为 16 的倍数、不超过 3840，长短边比例不超过 3:1，总像素在 655360–8294400。使用 `--aspect-ratio` 时须同时给匹配的显式像素尺寸，不做隐式裁剪或近似映射。Gemini 原 `--image-size` 档位保持不变，不接受 GPT 的 pixel-size/quality。
+
+本地保守限制最多 14 张输入图、原始图片合计 20 MB，PNG/JPEG/WebP；这是适配器限制，不代表官方最大能力。首版未接入 mask、透明背景、输出格式选择或 input_fidelity；不将未发送参数描述为已生效。HTTP 传输与图片签名检查提取到 common.py，两家分别保留协议校验与解析，不引入 SDK 依赖、隐藏重试或重定向。
+
+示例（路径为占位，正式发送须有用户授权）：
+
+```sh
+PYTHONPATH=src python3 -m anigc prepare generations/<任务目录> \
+  --backend gpt --prompt-file prompt-record.md \
+  --api-text-file actual-text.md --reference-file reference-baseline.md \
+  --pixel-size 1024x1024 --quality low
+PYTHONPATH=src python3 -m anigc check-request generations/<任务目录> 001
+PYTHONPATH=src python3 -m anigc generate generations/<任务目录> 001 --execute --evidence-ready
+```
+
+新增像素尺寸/质量仅在使用时写入 state 和 settings；旧轮次没有这两个字段时保持原 settings 文本不变，旧校验值不需要迁移。新字段参与冻结哈希验证。监修、promote、accept、recover、collect 不分后端。
+
+官方依据：[图片生成指南](https://developers.openai.com/api/docs/guides/image-generation)、[Flare 型号](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare)。
+
+### 账号可用性
+
+本地支持某个型号不代表账号获得访问权限。型号可见性、生成权限、额度和实际返回图片需分别核验。账号查询结果、网络故障和真实任务记录保留在本地，不随公共文档发布；没有明确生成授权时不发送测试图片请求。
+
+## Codex 内置工具路线（codex-image）
+
+这是会话工具路线，不是 OpenAI HTTP API。用户说“用 Codex 内置生图”时选择 `codex-image`；说“用 GPT API”时选择 `gpt`；Gemini 保持 `gemini`。仅说 GPT 而未区分入口时，沿用任务已选路线；新任务由 Codex 明确记录采用的路线，不靠 key 是否存在猜测。切换路线仍共享原批次预算。
+
+本路线不读取 GPT_API_KEY/GPT_IMAGE_MODEL，也不需要 OpenAI API key。型号记录为 `codex-managed`，只是执行方式标记，实际内部型号未知；不允许指定 gpt-image-* 冒充工具型号。当前工具没有结构化 quality、pixel_size、image_size、aspect_ratio 参数，因此本地拒绝这些选项；在完整提交文字中描述比例、尺寸和质量目标，实际输出须检查。prepare 要求 `--submission-file`（与原 `--api-text-file` 为别名）。
+
+流程：
+
+1. 用户明确启动图片任务后，核验当前会话实际有 image_gen 工具；准备资料并检查实际参考图。工具不可用时记录阻塞，不改用 API。
+2. 用 prepare 冻结 prompt、精确提交文字、参考基线和全部图片输入。编辑用 `--operation edit --input base <文件>`；参考图用 `--input reference <文件>`。输入仅支持已检查的 PNG/JPEG/WebP，独立遮罩参数尚未接入。
+3. 执行 check-request，再 reserve --evidence-ready；CLI reserve 对 codex-image 再做输入校验。成功预留后由 Codex 调用一次 image_gen，而非 Python generate。generate 对此路线在预留前拒绝，不读密钥、不代发。离线夹具可模拟本地流程，但不授权调用真实工具。
+4. 调用时 prompt 使用冻结的 submission.md 原文；图片使用已查看的轮次 inputs 副本绝对路径，按已登记顺序传 referenced_image_paths。无输入图时省略图片参数。不要同时使用 referenced_image_paths 和 num_last_images_to_include。仓库任务优先把所需图片全部保存到本地，避免依赖不稳定的最近会话图片选择。调用前需要增补文字或换图就新建轮次，不修改冻结输入。
+5. 取得工具实际返回的文件后立即用 finish 保存全部原始产物、执行信息与可获得的耗时。不得猜测输出路径、内部型号、费用或不存在的请求 ID。工具只提供内联结果而无法取得本地文件时记录收录阻塞，不能重发来获取文件。结果不明使用 unknown，明确失败用 failed；不得因工具异常自动重试。
+6. 结果完整时使用 finish --status succeeded，随后进行视觉监修。若工具明确返回不完整产物，保留可读候选并保持未决，不得使用普通 succeeded 声称完整；需要恢复清点。收录中断先 recover，再依据原始工具结果使用同一组文件 finish，不再调用工具。仅在 API stage_result 已有完整收据时使用 collect。
+7. review、promote、accept 与其他路线相同。工具返回图片不代表 Agent 监修通过。
+
+本地验证只证明文件、用途、冻结与计数契约；不能确认会话工具存在、替 Agent 调用工具或证明 Agent 使用了相同输入。真实生成仍由会话中的 Codex 按上述步骤负责，本次接入仅做离线测试。
