@@ -15,6 +15,7 @@
 !/docs/architecture.md
 !/docs/local-tools.md
 !/docs/generation-backends.md
+!/docs/image-quality-improvement-plan.md
 
 /.agents/*
 !/.agents/skills/
